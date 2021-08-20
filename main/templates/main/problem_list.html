@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <h2>Задачи</h2>
+    <ul>
+        {% for problem in object_list %}
+            <li><a href="{% url 'problem_page' problem.id %}">{{ problem.name }}</a></li>
+        {% endfor %}
+    </ul>
+{% endblock %}

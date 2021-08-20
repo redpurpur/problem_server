@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <style>
+      p {
+          display: inline
+      }
+
+      #loader {
+        border: 16px solid #f3f3f3;
+        border-top: 16px solid #3498db;
+        border-radius: 50%;
+        width: 200px;
+        height: 200px;
+        display: none;
+        animation: spin 2s linear infinite;
+      }
+
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+
+      #submission-status {
+          font-size: 24px;
+          color: #445588;
+      }
+  </style>
+
+  <div id="loader"></div>
+  <p>Статус решения:</p> <p id="submission-status"></p>
+  <div id="editor-div">
+    <h2>Задача {{ object.name }}</h2>
+    <p>{{ object.description }}</p>
+
+    <div><p>Код писать ниже</p></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.32.0/codemirror.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.32.0/codemirror.min.css" />
+
+    <textarea id="editor"></textarea>
+  </div>
+  <button id="send-button">Отправить</button>
+
+  <script>
+    let codeMirror = new CodeMirror.fromTextArea(
+        document.getElementById("editor"),
+        {
+            lineNumbers: true,
+            mode: {name: "python", json: true},
+            theme: 'monokai'
+        }
+    );
+
+    function disableLoader(){
+        document.getElementById("send-button").style.display = "block";
+        document.getElementById("loader").style.display = "none";
+        document.getElementById("editor-div").style.display = "block";
+    }
+
+    function enableLoader(){
+        document.getElementById("send-button").style.display = "none";
+        document.getElementById("loader").style.display = "block";
+        document.getElementById("editor-div").style.display = "none";
+    }
+
+    function changeStatus(statusText){
+        document.getElementById("submission-status").textContent = statusText;
+    }
+
+    function connectWS(submissionId){
+          let connectionString = 'ws://' + window.location.host + '/check_submission_status/' + submissionId + '/';
+          let socket = new WebSocket(connectionString);
+          let polling = null
+
+          socket.onopen = function open() {
+              console.log('WebSockets connection created.');
+              polling = setInterval(function () {
+                  socket.send(JSON.stringify({
+                    "submission_id": submissionId
+                  }));
+              }, 1000);
+          };
+
+          socket.onclose = function (e) {
+              console.log('Socket is closed.', e.reason);
+              disableLoader();
+          };
+
+          socket.onmessage = function (e) {
+              let data = JSON.parse(e.data);
+              data = data["payload"];
+              let status = data["status"];
+              switch (status) {
+                  case "correct":
+                      changeStatus(status);
+                      clearInterval(polling);
+                      socket.close();
+                      break;
+                  case "wrong":
+                      changeStatus(status);
+                      clearInterval(polling);
+                      socket.close();
+                      break;
+                  case "evaluation":
+                      changeStatus(status);
+                  default:
+                      console.log("Wait next", status)
+              }
+          };
+
+          if (socket.readyState === WebSocket.OPEN) {
+              socket.onopen();
+          }
+        }
+
+    function sendSubmission(){
+        let submissionCode = codeMirror.getValue();
+        (async () => {
+          const rawResponse = await fetch('{% url 'send_submission' object.id %}', {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({code: submissionCode})
+          });
+          const content = await rawResponse.json();
+          console.log('content');
+          console.log(content);
+
+          if ('submission_id' in content){
+              enableLoader();
+              connectWS(content.submission_id)
+          }
+        })()
+
+  }
+
+  let sendButton = document.getElementById("send-button");
+  sendButton.addEventListener("click", sendSubmission, false);
+
+  </script>
+
+{% endblock %}
